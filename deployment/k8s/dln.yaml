@@ -1,0 +1,121 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dln
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dln-data
+  namespace: dln
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dln
+  namespace: dln
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dln
+  template:
+    metadata:
+      labels:
+        app: dln
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dln
+          image: REPLACE_WITH_YOUR_BUILT_DLN_IMAGE
+          ports:
+            - name: public
+              containerPort: 8000
+            - name: operator
+              containerPort: 8001
+          envFrom:
+            - secretRef:
+                name: dln-secrets
+          env:
+            - name: DLN_DB
+              value: /data/dln.sqlite3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: public
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: public
+            initialDelaySeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: dln-data
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dln-public
+  namespace: dln
+spec:
+  selector:
+    app: dln
+  ports:
+    - name: public
+      port: 8000
+      targetPort: public
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dln-isolation
+  namespace: dln
+spec:
+  podSelector:
+    matchLabels:
+      app: dln
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              dln-public-edge: "true"
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress: []

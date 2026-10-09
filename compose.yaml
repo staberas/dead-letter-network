@@ -1,0 +1,21 @@
+services:
+  dln:
+    build: .
+    env_file: .env
+    ports:
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8001:8001"
+    volumes:
+      - dln-data:/data
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 64
+volumes:
+  dln-data:
