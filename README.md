@@ -51,7 +51,7 @@ bash run-demo.sh
 Use `bash run-demo.sh --check` to set up and verify without launching, or
 `bash run-demo.sh --repair` to reinstall dependencies. Run from any directory;
 the script finds its project directory and always uses that project's `.venv`.
-Both listeners bind to loopback. Ctrl+C stops them together. The operator
+Both listeners bind to loopback by default. Ctrl+C stops them together. The operator
 username and password are stored in `.demo.env`; Docker's `.env` is separate.
 Existing demo secrets are reused even if the shell contains different exports.
 On Debian, install `python3-venv` if environment creation fails. Installation
@@ -66,6 +66,38 @@ on the reported Cargo 1.83 host. It checks for `cargo`, `rustc` (both 1.75+), a 
 compiler, and Python headers before installation. The first native build can
 take several minutes; build jobs default to one to reduce memory pressure.
 These compatibility pins are for the demo and must be reviewed before release.
+
+To expose the existing host's API through a ZeroTier-connected reverse proxy,
+find its ZeroTier IPv4 with `ip -4 -br addr`, then run:
+
+```sh
+bash run-demo.sh --host YOUR_DLN_ZEROTIER_IP
+```
+
+Replace the placeholder with the actual IPv4, without its `/24` suffix. Only
+8000 binds to that address; the operator listener defaults to `127.0.0.1:8001`.
+From the proxy server, test `http://YOUR_DLN_ZEROTIER_IP:8000/healthz`, then
+configure its HTTPS virtual host to proxy to that backend. The demo script does
+not change firewall rules or ZeroTier membership. If a firewall blocks access,
+allow 8000 from the proxy's ZeroTier IP on the ZeroTier interface.
+
+To access the authenticated dashboard from your ZeroTier devices too, use:
+
+```sh
+bash run-demo.sh --host YOUR_DLN_ZEROTIER_IP --admin-host YOUR_DLN_ZEROTIER_IP
+```
+
+Open `http://YOUR_DLN_ZEROTIER_IP:8001/` from an authorized ZeroTier device
+and log in with the existing credentials in `.demo.env`. If needed, allow
+TCP 8001 on the ZeroTier interface from your operator device's ZeroTier IP.
+Keep the public reverse proxy pointed only at port 8000.
+
+For correct client-IP logging and per-client rate limits through a proxy, use
+`--trusted-proxy YOUR_PROXY_ZEROTIER_IP` as well. The proxy must overwrite or
+sanitize incoming forwarded headers and supply the actual client address. Only
+that exact proxy IP is trusted; omitting the flag keeps header trust disabled,
+and requests through a proxy will share its peer-IP budget. This flag never
+enables proxy-header trust on the operator listener.
 
 For a manual setup instead:
 

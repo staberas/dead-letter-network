@@ -13,6 +13,13 @@ Set the base URL once in your request terminal:
 BASE='http://127.0.0.1:8000'
 ```
 
+If the demo was started with `--host YOUR_ZEROTIER_IP`, set `BASE` to
+`http://YOUR_ZEROTIER_IP:8000` instead. An address-specific bind does not also
+listen on `127.0.0.1:8000`. Through the public reverse proxy, use its HTTPS base
+URL. The operator listener defaults to loopback independently. To access it
+over ZeroTier, add `--admin-host YOUR_ZEROTIER_IP` and use
+`http://YOUR_ZEROTIER_IP:8001/`; existing operator authentication is required.
+
 - Use the paths exactly as shown, without a trailing `/`. A trailing slash
   normally produces HTTP 307. Curl needs `-L` to follow it; using the canonical
   path avoids the redirect.
