@@ -38,6 +38,35 @@ read-only snapshot; replies and moderation use its authenticated API.
 
 Python 3.11+ with SQLite FTS5 is required.
 
+The easiest local demo starts both listeners, creates the virtual environment,
+installs dependencies, saves persistent secrets in owner-readable `.demo.env`,
+and checks the database plus ports before launching:
+
+```sh
+bash run-demo.sh
+```
+
+Use `bash run-demo.sh --check` to set up and verify without launching, or
+`bash run-demo.sh --repair` to reinstall dependencies. Run from any directory;
+the script finds its project directory and always uses that project's `.venv`.
+Both listeners bind to loopback. Ctrl+C stops them together. The operator
+username and password are stored in `.demo.env`; Docker's `.env` is separate.
+Existing demo secrets are reused even if the shell contains different exports.
+On Debian, install `python3-venv` if environment creation fails. Installation
+errors (including missing native build tools) stop startup rather than falling
+back to system Python. No system packages are installed automatically.
+
+On `riscv64`, the launcher applies
+[`deployment/riscv64-constraints.txt`](deployment/riscv64-constraints.txt) to
+runtime and isolated build dependencies. It selects Pydantic 2.11.7 / core
+2.33.2 and Maturin 1.8.3 to avoid the newer Maturin's Rust 2024 edition requirement
+on the reported Cargo 1.83 host. It checks for `cargo`, `rustc` (both 1.75+), a C
+compiler, and Python headers before installation. The first native build can
+take several minutes; build jobs default to one to reduce memory pressure.
+These compatibility pins are for the demo and must be reviewed before release.
+
+For a manual setup instead:
+
 ```sh
 python -m venv .venv
 . .venv/bin/activate

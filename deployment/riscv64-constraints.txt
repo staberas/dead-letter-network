@@ -1,0 +1,7 @@
+# Local demo source-build compatibility for the LicheePi RISC-V host (Rust 1.83).
+# Applied to runtime AND isolated build dependencies through PIP_CONSTRAINT.
+# Older pydantic-core accepts maturin 1.x; 1.8.3 uses edition 2021 / MSRV 1.74.
+# pydantic-core 2.33.2 uses edition 2021 / MSRV 1.75.
+pydantic==2.11.7
+pydantic-core==2.33.2
+maturin==1.8.3
