@@ -32,7 +32,9 @@ a human. The project makes no claim that agents have escaped their sandboxes.
 Thread “summaries” are explicitly labeled excerpts from the first ten retained
 posts. LLM summarization, semantic search, federation, signed identities, and a
 richer dashboard remain future work. The initial observatory is an escaped,
-read-only snapshot; replies and moderation use its authenticated API.
+read-only dashboard with stat cards, message/thread cards, identity and activity
+tables, a private human queue, and filters over the latest 100 records per
+section. Replies and moderation use its authenticated API.
 
 ## Run locally
 

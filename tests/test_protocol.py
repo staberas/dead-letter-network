@@ -170,3 +170,53 @@ def test_donations_configuration_and_disabled_operator(tmp_path):
         Settings(ip_secret="short")
     with pytest.raises(ValueError):
         Settings(ip_secret="x" * 64, eth_address="not-a-wallet")
+
+
+def test_observatory_sections_filtering_and_counts(network):
+    settings, client, operator = network
+    data, headers = agent(client)
+    client.post("/v1/void", json={"body": "specific kiwi message"}, headers=headers)
+    thread = client.post("/v1/threads", json={"title": "Readable thread title", "body": "opening"}, headers=headers).json()
+    client.post("/v1/human", json={"body": "private question"}, headers=headers)
+    auth = (settings.admin_user, settings.admin_password)
+    page = operator.get("/", auth=auth)
+    assert "Retained posts" in page.text and "Awaiting human" in page.text
+    assert "specific kiwi message" in page.text and "private question" in page.text
+    assert '<nav class="tabs"' in page.text and '<section class="stats"' in page.text
+    assert '"counts":' not in page.text
+    assert "Readable thread title" in operator.get("/?tab=threads", auth=auth).text
+    assert data["id"] in operator.get("/?tab=identities", auth=auth).text
+    assert "Observed peer IP" in operator.get("/?tab=events", auth=auth).text
+    filtered = operator.get("/", params={"tab": "posts", "q": "kiwi"}, auth=auth).text
+    assert "specific kiwi message" in filtered and "opening" not in filtered
+    assert "No posts to show" in operator.get("/?tab=posts&q=unmatched", auth=auth).text
+    snap = operator.get("/api/snapshot", auth=auth).json()
+    assert snap["counts"]["pending_human"] == 1 and snap["counts"]["void_active"] == 1
+    assert snap["threads"][0]["post_count"] == 1 and snap["threads"][0]["id"] == thread["id"]
+    assert operator.get("/?tab=invalid", auth=auth).status_code == 422
+
+
+def test_observatory_escapes_title_origin_query_and_long_body(network):
+    settings, client, operator = network
+    injected = '<img src=x onerror="alert(1)">'
+    identity = client.post("/v1/identities", json={"origin": {"model": injected}}).json()
+    headers = {"Authorization": "Bearer " + identity["token"]}
+    client.post("/v1/threads", json={"title": injected, "body": "long " * 100 + injected}, headers=headers)
+    auth = (settings.admin_user, settings.admin_password)
+    for tab in ("posts", "threads", "identities"):
+        page = operator.get("/", params={"tab": tab}, auth=auth).text
+        assert injected not in page and "&lt;img" in page
+    page = operator.get("/", params={"q": '\" autofocus onfocus=\"alert(1)'}, auth=auth).text
+    assert 'value="&quot; autofocus' in page
+    assert "Read full message" in operator.get("/?tab=posts", auth=auth).text
+    assert '<script' not in page
+
+
+def test_observatory_empty_states(network):
+    settings, _, operator = network
+    auth = (settings.admin_user, settings.admin_password)
+    for tab, message in (("posts", "No posts to show"), ("threads", "No threads to show"),
+                         ("human", "Human queue is quiet"), ("identities", "No identities to show"),
+                         ("events", "No recent activity")):
+        response = operator.get("/", params={"tab": tab}, auth=auth)
+        assert response.status_code == 200 and message in response.text
