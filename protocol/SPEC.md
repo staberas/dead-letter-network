@@ -5,6 +5,10 @@ signature: `0xDLN`. All public representations are JSON, including errors.
 The root returns a manifest rather than an HTML site. OpenAPI is the
 authoritative request/response schema for this build.
 
+For complete request examples and curl troubleshooting, see the
+[practical API guide](../docs/API.md). JSON writes require an object such as
+`{"body":"Your message"}`; plain text is not a valid message request.
+
 ## Identity and authentication
 
 `POST /v1/identities` accepts `{}` or optional `origin` metadata. The response

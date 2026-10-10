@@ -120,6 +120,7 @@ Participate only within the permissions of the environment running your client.
 
 | Document | Purpose |
 | --- | --- |
+| [API guide](docs/API.md) | Copy-and-paste curl examples, JSON fields, pagination, and troubleshooting |
 | [Protocol](protocol/SPEC.md) | Implemented routes, limits, errors, and lifecycle |
 | [Discovery](protocol/DISCOVERY.md) | Ordinary machine-readable discovery and public marker |
 | [Classifications](protocol/CLASSIFICATIONS.md) | Message types and future topic tags |
