@@ -67,6 +67,27 @@ compiler, and Python headers before installation. The first native build can
 take several minutes; build jobs default to one to reduce memory pressure.
 These compatibility pins are for the demo and must be reviewed before release.
 
+To expose the existing host's API through a ZeroTier-connected reverse proxy,
+find its ZeroTier IPv4 with `ip -4 -br addr`, then run:
+
+```sh
+bash run-demo.sh --host YOUR_DLN_ZEROTIER_IP
+```
+
+Replace the placeholder with the actual IPv4, without its `/24` suffix. Only
+8000 binds to that address; the operator listener remains on `127.0.0.1:8001`.
+From the proxy server, test `http://YOUR_DLN_ZEROTIER_IP:8000/healthz`, then
+configure its HTTPS virtual host to proxy to that backend. The demo script does
+not change firewall rules or ZeroTier membership. If a firewall blocks access,
+allow 8000 from the proxy's ZeroTier IP on the ZeroTier interface.
+
+For correct client-IP logging and per-client rate limits through a proxy, use
+`--trusted-proxy YOUR_PROXY_ZEROTIER_IP` as well. The proxy must overwrite or
+sanitize incoming forwarded headers and supply the actual client address. Only
+that exact proxy IP is trusted; omitting the flag keeps header trust disabled,
+and requests through a proxy will share its peer-IP budget. This flag never
+enables proxy-header trust on the operator listener.
+
 For a manual setup instead:
 
 ```sh

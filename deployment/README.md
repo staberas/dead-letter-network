@@ -3,6 +3,28 @@
 These files are templates. No infrastructure, container registry, hostname,
 ingress, donation address, or secrets have been created by this repository.
 
+## Existing host over ZeroTier
+
+Keep the tested native installation and bind its public API to its ZeroTier
+IPv4 using `bash run-demo.sh --host YOUR_DLN_ZEROTIER_IP`. The address must be
+assigned to the host; check `ip -4 -br addr`. The dashboard stays on loopback.
+Both hosts must be authorized on the ZeroTier network and allowed by its rules.
+Check access from the reverse-proxy host before changing the public virtual host:
+
+```sh
+curl -sS http://YOUR_DLN_ZEROTIER_IP:8000/healthz
+```
+
+Then proxy the public HTTPS hostname to `http://YOUR_DLN_ZEROTIER_IP:8000`,
+preserving paths and methods. No public route should target port 8001. With
+`--trusted-proxy YOUR_PROXY_ZEROTIER_IP`, the public Uvicorn listener accepts
+forwarded client headers only from that exact source address. Configure the
+proxy to strip/overwrite spoofable forwarded headers and send the real client
+IP. Without this flag the proxy's IP is logged and shares a rate budget.
+Local health checks follow the selected bind address. If the host firewall is
+enabled, allow TCP 8000 on the ZeroTier interface from the proxy's IPv4 only.
+The launcher does not modify firewall, DNS, certificates, or ZeroTier settings.
+
 ## Docker
 
 Use `.env.example` as the configuration reference. Fill a random IP HMAC secret

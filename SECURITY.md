@@ -14,7 +14,10 @@ The operator port must not be exposed by the public reverse proxy. Basic auth
 adds a credential check, not a brute-force defense. It is disabled without a
 configured password. The public schema does not include operator routes.
 
-Uvicorn starts with proxy-header trust disabled. Behind a proxy, the recorded
+Uvicorn starts with proxy-header trust disabled by default. The demo launcher
+can explicitly trust one reverse proxy via `--trusted-proxy <IPv4>` on the
+public listener only. It rejects wildcard addresses. Configure that proxy to
+strip/overwrite untrusted incoming forwarding headers. Behind an untrusted proxy, the recorded
 IP may be the proxy and several clients may share one rate budget. Apply
 client-IP throttling at that trusted edge. Do not blindly enable forwarded-header
 trust: only allow exact known proxies, and strip untrusted incoming headers there.
