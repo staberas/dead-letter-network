@@ -7,26 +7,33 @@ cd "$ROOT"
 CHECK_ONLY=0
 REPAIR=0
 PUBLIC_HOST=127.0.0.1
+ADMIN_HOST=127.0.0.1
 TRUSTED_PROXY=""
 fail() { printf '\n[DLN] ERROR: %s\n' "$*" >&2; exit 1; }
 while (($#)); do
     case "$1" in
         --check) CHECK_ONLY=1 ;;
         --repair) REPAIR=1 ;;
-        --host|--trusted-proxy)
+        --host|--admin-host|--trusted-proxy)
             [[ $# -ge 2 && "$2" != --* && -n "$2" ]] || fail "$1 requires an IPv4 address."
-            if [[ "$1" == --host ]]; then PUBLIC_HOST="$2"; else TRUSTED_PROXY="$2"; fi
+            case "$1" in
+                --host) PUBLIC_HOST="$2" ;;
+                --admin-host) ADMIN_HOST="$2" ;;
+                --trusted-proxy) TRUSTED_PROXY="$2" ;;
+            esac
             shift ;;
         --help|-h)
             cat <<'HELP'
-Usage: ./run-demo.sh [--check] [--repair] [--host IPv4] [--trusted-proxy IPv4]
+Usage: ./run-demo.sh [--check] [--repair] [--host IPv4] [--admin-host IPv4] [--trusted-proxy IPv4]
 
 Sets up .venv, installs DLN, saves secrets in .demo.env, checks SQLite and ports,
 then starts the public API and private observatory (loopback by default).
   --check   Bootstrap and check configuration without starting HTTP servers.
   --repair  Reinstall project dependencies even if the cached setup looks valid.
   --host IPv4          Bind ONLY the public API to this local address, e.g. its
-                       ZeroTier IPv4. The operator dashboard stays on 127.0.0.1.
+                       ZeroTier IPv4. Default: 127.0.0.1.
+  --admin-host IPv4    Bind the authenticated operator dashboard to this local
+                       address, e.g. its ZeroTier IPv4. Default: 127.0.0.1.
   --trusted-proxy IPv4 Trust forwarded headers ONLY from this reverse proxy's
                        source IPv4. Omit for direct access; never uses '*'.
 
@@ -111,7 +118,7 @@ fi
 "$PY" -m pip check || fail 'Dependency conflicts found. Try ./run-demo.sh --repair and inspect pip output.'
 
 # Always use the project interpreter; never fall back to system uvicorn/Pydantic.
-exec "$PY" - "$ROOT" "$CHECK_ONLY" "$PUBLIC_HOST" "$TRUSTED_PROXY" <<'PYTHON'
+exec "$PY" - "$ROOT" "$CHECK_ONLY" "$PUBLIC_HOST" "$TRUSTED_PROXY" "$ADMIN_HOST" <<'PYTHON'
 import asyncio
 import contextlib
 import ipaddress
@@ -132,6 +139,7 @@ root = Path(sys.argv[1])
 check_only = sys.argv[2] == "1"
 public_host = sys.argv[3]
 trusted_proxy = sys.argv[4]
+admin_host = sys.argv[5]
 config = root / ".demo.env"
 
 
@@ -142,12 +150,13 @@ def fail(message):
 
 try:
     ipaddress.IPv4Address(public_host)
+    ipaddress.IPv4Address(admin_host)
     if trusted_proxy:
         proxy_address = ipaddress.IPv4Address(trusted_proxy)
         if proxy_address.is_unspecified or proxy_address.is_multicast:
             fail("--trusted-proxy must identify one actual proxy, not a wildcard address.")
 except ValueError:
-    fail("--host and --trusted-proxy must be IPv4 addresses, without a port or CIDR suffix.")
+    fail("--host, --admin-host, and --trusted-proxy must be IPv4 addresses, without a port or CIDR suffix.")
 
 print(f"[DLN] Python {platform.python_version()} / {platform.machine()} / {sys.executable}")
 try:
@@ -219,7 +228,7 @@ except (OSError, sqlite3.Error) as error:
     fail(f"SQLite/FTS5 or database write check failed: {error}")
 print(f"[DLN] SQLite FTS5 and writable database OK: {settings.db}")
 
-for host, port in ((public_host, 8000), ("127.0.0.1", 8001)):
+for host, port in ((public_host, 8000), (admin_host, 8001)):
     try:
         with socket.socket() as probe:
             # Match Uvicorn's bind behavior: recently closed connections in
@@ -248,7 +257,8 @@ async def run():
 
     def healthy():
         health_host = "127.0.0.1" if public_host == "0.0.0.0" else public_host
-        for host, port, path, expected in ((health_host, 8000, "/healthz", 200), ("127.0.0.1", 8001, "/", 401)):
+        admin_health_host = "127.0.0.1" if admin_host == "0.0.0.0" else admin_host
+        for host, port, path, expected in ((health_host, 8000, "/healthz", 200), (admin_health_host, 8001, "/", 401)):
             try:
                 with opener.open(f"http://{host}:{port}{path}", timeout=0.5) as response:
                     if response.status != expected:
@@ -262,7 +272,7 @@ async def run():
 
     status = 0
     try:
-        for name, port, host in (("public", 8000, public_host), ("admin", 8001, "127.0.0.1")):
+        for name, port, host in (("public", 8000, public_host), ("admin", 8001, admin_host)):
             proxy_flags = (["--proxy-headers", "--forwarded-allow-ips", trusted_proxy]
                            if name == "public" and trusted_proxy else ["--no-proxy-headers"])
             processes.append(subprocess.Popen([
@@ -276,7 +286,7 @@ async def run():
                 status = 1
                 break
             if await asyncio.to_thread(healthy):
-                print(f"[DLN] Ready: API http://{public_host}:8000 | Observatory http://127.0.0.1:8001", flush=True)
+                print(f"[DLN] Ready: API http://{public_host}:8000 | Observatory http://{admin_host}:8001", flush=True)
                 print("[DLN] Admin password is saved in .demo.env. Ctrl+C stops both servers.", flush=True)
                 break
             if time.monotonic() >= deadline:

@@ -7,7 +7,7 @@ ingress, donation address, or secrets have been created by this repository.
 
 Keep the tested native installation and bind its public API to its ZeroTier
 IPv4 using `bash run-demo.sh --host YOUR_DLN_ZEROTIER_IP`. The address must be
-assigned to the host; check `ip -4 -br addr`. The dashboard stays on loopback.
+assigned to the host; check `ip -4 -br addr`. The dashboard defaults to loopback.
 Both hosts must be authorized on the ZeroTier network and allowed by its rules.
 Check access from the reverse-proxy host before changing the public virtual host:
 
@@ -24,6 +24,20 @@ IP. Without this flag the proxy's IP is logged and shares a rate budget.
 Local health checks follow the selected bind address. If the host firewall is
 enabled, allow TCP 8000 on the ZeroTier interface from the proxy's IPv4 only.
 The launcher does not modify firewall, DNS, certificates, or ZeroTier settings.
+
+To bind the dashboard to the private ZeroTier address as well:
+
+```sh
+bash run-demo.sh --host YOUR_DLN_ZEROTIER_IP \
+  --admin-host YOUR_DLN_ZEROTIER_IP \
+  --trusted-proxy YOUR_PROXY_ZEROTIER_IP
+```
+
+Browse to `http://YOUR_DLN_ZEROTIER_IP:8001/` over ZeroTier and use the
+existing operator credentials in `.demo.env`. Basic authentication remains
+required. Allow TCP 8001 from authorized operator devices on the ZeroTier
+interface if the host firewall requires it. Do not add port 8001 to the public
+reverse proxy. The admin listener always disables proxy-header trust.
 
 ## Docker
 
