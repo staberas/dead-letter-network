@@ -220,3 +220,58 @@ def test_observatory_empty_states(network):
                          ("events", "No recent activity")):
         response = operator.get("/", params={"tab": tab}, auth=auth)
         assert response.status_code == 200 and message in response.text
+
+
+def test_dashboard_human_reply_form_and_agent_retrieval(network):
+    import re
+    settings, client, operator = network
+    _, owner = agent(client)
+    _, other = agent(client)
+    request_id = client.post("/v1/human", json={"body": "Can you hear me?"}, headers=owner).json()["id"]
+    auth = (settings.admin_user, settings.admin_password)
+    path = f"/human/{request_id}/answer"
+    for tab in ("overview", "human"):
+        page = operator.get("/", params={"tab": tab}, auth=auth)
+        assert f'action="{path}"' in page.text
+        assert "Reply to agent" in page.text and "Send reply" in page.text
+        assert "form-action 'self'" in page.headers["content-security-policy"]
+    token = re.search(r'name="csrf" value="([^"]+)"', page.text)[1]
+    fields = {"csrf": token, "body": "Yes! Καλημέρα.\nSecond line.", "tab": "human", "q": ""}
+    assert operator.post(path, data=fields).status_code == 401
+    for invalid_token in ("wrong", "", "α"):
+        assert operator.post(path, data={**fields, "csrf": invalid_token}, auth=auth).status_code == 403
+    response = operator.post(path, data=fields, auth=auth, follow_redirects=False)
+    assert response.status_code == 303
+    page = operator.get(response.headers["location"], auth=auth)
+    assert "Reply sent." in page.text and "Second line." in page.text
+    assert f'action="{path}"' not in page.text
+    assert client.get(f"/v1/human/{request_id}", headers=owner).json()["answer"] == fields["body"]
+    assert client.get(f"/v1/human/{request_id}", headers=other).status_code == 404
+    duplicate = operator.post(path, data={**fields, "body": "<unsent draft>"}, auth=auth)
+    assert duplicate.status_code == 409
+    assert "&lt;unsent draft&gt;" in duplicate.text and "<unsent draft>" not in duplicate.text
+    assert client.get(f"/v1/human/{request_id}", headers=owner).json()["answer"] == fields["body"]
+
+
+def test_dashboard_reply_validation_keeps_draft_and_pending_request(network):
+    import re
+    settings, client, operator = network
+    _, owner = agent(client)
+    request_id = client.post("/v1/human", json={"body": "Private <question>"}, headers=owner).json()["id"]
+    auth = (settings.admin_user, settings.admin_password)
+    page = operator.get("/?tab=human", auth=auth)
+    token = re.search(r'name="csrf" value="([^"]+)"', page.text)[1]
+    path = f"/human/{request_id}/answer"
+    fields = {"csrf": token, "body": " ", "tab": "human", "q": ""}
+    for draft, expected in ((" ", 422), ("α" * 4097, 413)):
+        response = operator.post(path, data={**fields, "body": draft}, auth=auth)
+        # URL-encoded multibyte text may exceed the overall request limit first.
+        assert response.status_code == expected
+    assert client.get(f"/v1/human/{request_id}", headers=owner).json()["answer"] is None
+    oversized = "a" * 8193
+    response = operator.post(path, data={**fields, "body": oversized}, auth=auth)
+    assert response.status_code == 422 and oversized in response.text
+    assert '<details class="reply-form" open>' in response.text
+    assert operator.post(path, json=fields, auth=auth).status_code == 415
+    assert operator.post(path, data={**fields, "extra": "bad"}, auth=auth).status_code == 400
+    assert operator.post(path, data={**fields, "tab": "bad"}, auth=auth).status_code == 400

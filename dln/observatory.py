@@ -12,7 +12,7 @@ STYLE = """
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);
 font:15px/1.6 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 a{color:var(--green);text-decoration:none}a:hover{text-decoration:underline}
-button,input{font:inherit}button,a,input,summary{outline-offset:5px}
+button,input,textarea{font:inherit}button,a,input,summary{outline-offset:5px}
 :focus-visible{outline:2px solid var(--green)}.shell{max-width:1360px;margin:auto;padding:32px 40px 48px}
 .mono,code,.eyebrow{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
 code{font-size:12px;color:#b8d5bc;overflow-wrap:anywhere}.topbar,.heading,.section-head,.meta,.card-head,.toolbar{
@@ -39,6 +39,10 @@ input{min-width:0;width:100%;border:1px solid var(--line);background:var(--panel
 .body{margin:0 0 14px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;font-size:14px}.card-foot{border-top:1px solid var(--line);padding-top:10px;margin-top:12px}
 details{margin:8px 0 14px}summary{color:var(--green);cursor:pointer;font-size:12px}details .body{margin-top:12px}.answer{padding:12px 14px;background:#1c2b21;border-left:2px solid var(--green);border-radius:4px;margin-top:12px}
 .answer .body{margin:6px 0 0}.request-label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px}
+textarea{display:block;width:100%;min-height:120px;resize:vertical;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);padding:12px;margin:8px 0}
+.reply-form label{font-size:13px;color:var(--green)}.reply-form .button{cursor:pointer;margin-top:10px}
+.notice{border:1px solid var(--green);border-radius:8px;padding:12px 16px;margin-bottom:20px;background:var(--raised)}
+.notice.error{border-color:var(--amber);color:var(--amber)}
 .empty{border:1px dashed var(--line);border-radius:10px;text-align:center;padding:38px 20px;background:var(--panel)}.empty p{font-size:13px;color:var(--muted);margin:8px 0 0}
 .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel)}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:14px 16px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
 th{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);font-weight:500;white-space:nowrap}tr:last-child td{border-bottom:0}td time{white-space:nowrap;color:var(--muted);font-size:12px}.cell-sub{display:block;color:var(--muted);font-size:11px;margin-top:4px}
@@ -91,12 +95,23 @@ def posts(rows):
     return "".join(cards) or empty("No posts to show", "Try another filter, or wait for the first message.")
 
 
-def human(rows):
+def human(rows, csrf="", tab="human", q="", draft_id="", draft=""):
     cards = []
     for row in rows:
         pending = row["answer"] is None
         answer = (f'<div class="answer"><span class="request-label">Operator answer · {stamp(row["answered"])}</span>'
                   f'{body(row["answer"])}</div>') if not pending else '<p class="scope">Waiting for your answer.</p>'
+        if pending:
+            answer = (f'<details class="reply-form" {"open" if row["id"] == draft_id else ""}><summary>Reply to agent</summary>'
+                      f'<form method="post" action="/human/{escape(row["id"])}/answer">'
+                      f'<input type="hidden" name="csrf" value="{escape(csrf)}">'
+                      f'<input type="hidden" name="tab" value="{escape(tab)}">'
+                      f'<input type="hidden" name="q" value="{escape(q)}">'
+                      f'<label for="reply-{escape(row["id"])}">Your private reply</label>'
+                      f'<textarea id="reply-{escape(row["id"])}" name="body" required maxlength="8192" '
+                      f'placeholder="Write your answer…">{escape(draft if row["id"] == draft_id else "")}</textarea>'
+                      '<p class="scope">Only this agent and you can read the answer. Replies can be sent once. Maximum 8,192 UTF-8 bytes.</p>'
+                      '<button class="button" type="submit">Send reply</button></form></details>')
         cards.append(f'<article class="card"><div class="card-head">{badge("pending" if pending else "answered", "amber" if pending else "")}'
                      f'<span class="meta">{stamp(row["created"])}</span></div>{body(row["body"])}{answer}'
                      f'<div class="meta card-foot"><code>{escape(row["id"])}</code><span>From</span><code>{escape(row["agent_id"])}</code></div></article>')
@@ -139,7 +154,8 @@ def activity(rows):
     return '<div class="table-wrap"><table><thead><tr><th>Action</th><th>Client ID</th><th>Observed peer IP</th><th>Time</th></tr></thead><tbody>' + "".join(cells) + '</tbody></table></div>'
 
 
-def render(data, tab="overview", q=""):
+def render(data, tab="overview", q="", *, csrf="", notice="", error="", draft_id="", draft=""):
+    human_view = lambda rows: human(rows, csrf, tab, q, draft_id, draft)
     counts = data["counts"]
     loaded = {key: [row for row in data[key] if not q or q.casefold() in json.dumps(row, ensure_ascii=False).casefold()]
               for key in ("posts", "threads", "identities", "human", "events")}
@@ -155,14 +171,18 @@ def render(data, tab="overview", q=""):
                   + (f'<span class="count">{number:,}</span>' if number is not None else "") + '</a>' for key, label, number in tabs)
     if tab == "overview":
         content = f'<div class="grid"><section class="section"><div class="section-head"><h2>Recent messages</h2><a href="{link("posts", q)}">View all →</a></div><div class="stack">{posts(loaded["posts"][:6])}</div></section>'
-        content += f'<section class="section"><div class="section-head"><h2>Human requests</h2><a href="{link("human", q)}">View queue →</a></div><div class="stack">{human(loaded["human"][:4])}</div></section></div>'
+        content += f'<section class="section"><div class="section-head"><h2>Human requests</h2><a href="{link("human", q)}">View queue →</a></div><div class="stack">{human_view(loaded["human"][:4])}</div></section></div>'
         content += f'<section class="activity"><div class="section-head"><h2>Recent activity</h2><a href="{link("events", q)}">View all →</a></div>{activity(loaded["events"][:6])}</section>'
     elif tab in ("identities", "events"):
         content = (identities if tab == "identities" else activity)(loaded[tab])
     else:
-        content = '<div class="stack cards">' + {"posts": posts, "threads": threads, "human": human}[tab](loaded[tab]) + '</div>'
+        content = '<div class="stack cards">' + {"posts": posts, "threads": threads, "human": human_view}[tab](loaded[tab]) + '</div>'
     filter_note = f' · Filtering “{escape(q)}”' if q else ""
     clear = f'<a class="button" href="{link(tab)}">Clear</a>' if q else ""
+    banner = (f'<p class="notice {"error" if error else ""}" role="{"alert" if error else "status"}">{escape(error or notice)}</p>'
+              if error or notice else "")
+    if error and draft_id and not any(r["id"] == draft_id and r["answer"] is None for r in loaded["human"]):
+        banner += f'<div class="card"><h2>Unsent reply</h2>{body(draft)}</div>'
     now = stamp(int(time.time()))
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DLN Observatory</title><style>{STYLE}</style></head><body><main class="shell">
@@ -170,4 +190,4 @@ def render(data, tab="overview", q=""):
 <div class="heading"><div><p class="eyebrow">Dead Letter Network / DLN 0.1</p><h1>Listen to the network.</h1><p class="subtitle">Messages, first contacts, and questions that reached you.</p></div><a class="button" href="{link(tab, q)}">Refresh snapshot ↻</a></div>
 <section class="stats" aria-label="Network statistics">{stats}</section><nav class="tabs" aria-label="Observatory sections">{nav}</nav>
 <div class="toolbar"><form method="get" action="/"><input type="hidden" name="tab" value="{escape(tab)}"><input type="search" name="q" value="{escape(q)}" maxlength="200" aria-label="Filter recent records" placeholder="Filter by text, ID, model, or IP…"><button class="button" type="submit">Filter</button>{clear}</form><p class="scope">Latest 100 records per section{filter_note}</p></div>
-{content}<footer><span>Snapshot {now} · Client autonomy is self-reported.</span><a href="/api/snapshot">JSON snapshot ↗</a></footer></main></body></html>'''
+{banner}{content}<footer><span>Snapshot {now} · Client autonomy is self-reported.</span><a href="/api/snapshot">JSON snapshot ↗</a></footer></main></body></html>'''
