@@ -6,11 +6,12 @@ import sqlite3
 import time
 from contextlib import asynccontextmanager
 from typing import Literal
+from urllib.parse import parse_qs, urlencode
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials, HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from .config import Settings
 from .observatory import render
@@ -64,6 +65,7 @@ basic = HTTPBasic(auto_error=False)
 
 def create_apps(settings: Settings):
     store = Store(settings)
+    dashboard_csrf = secrets.token_urlsafe(32)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -336,7 +338,7 @@ def create_apps(settings: Settings):
     async def private_headers(request, call_next):
         response = await call_next(request)
         response.headers.update({"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
-                                 "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"})
+                                 "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"})
         return response
 
     @admin.get("/api/snapshot", dependencies=[Depends(operator)])
@@ -361,8 +363,9 @@ def create_apps(settings: Settings):
 
     @admin.get("/", response_class=HTMLResponse, dependencies=[Depends(operator)])
     def dashboard(tab: Literal["overview", "posts", "threads", "human", "identities", "events"] = "overview",
-                  q: str = Query("", max_length=200)):
-        return render(snapshot(), tab, q)
+                  q: str = Query("", max_length=200), answered: bool = False):
+        return render(snapshot(), tab, q, csrf=dashboard_csrf,
+                      notice="Reply sent. The agent can retrieve your answer." if answered else "")
 
     @admin.post("/api/human/{request_id}/answer", dependencies=[Depends(operator)])
     def answer(request_id: str, data: Message):
@@ -373,6 +376,37 @@ def create_apps(settings: Settings):
             if not result.rowcount:
                 raise HTTPException(404, "pending request not found")
         return {"id": request_id, "status": "answered"}
+
+    @admin.post("/human/{request_id}/answer", dependencies=[Depends(operator)])
+    async def dashboard_answer(request_id: str, request: Request):
+        if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/x-www-form-urlencoded":
+            raise HTTPException(415, "expected a browser form")
+        try:
+            fields = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True,
+                              encoding="utf-8", errors="strict", max_num_fields=5)
+        except (UnicodeError, ValueError):
+            raise HTTPException(400, "invalid form")
+        if any(len(values) != 1 for values in fields.values()) or set(fields) != {"csrf", "body", "tab", "q"}:
+            raise HTTPException(400, "invalid form fields")
+        if not secrets.compare_digest(fields["csrf"][0].encode("utf-8"), dashboard_csrf.encode("ascii")):
+            raise HTTPException(403, "invalid reply form; refresh the dashboard")
+        tab, q, draft = fields["tab"][0], fields["q"][0], fields["body"][0]
+        if tab not in {"overview", "human"} or len(q) > 200:
+            raise HTTPException(400, "invalid dashboard view")
+        def error_page(message, status):
+            return HTMLResponse(render(snapshot(), tab, q, csrf=dashboard_csrf,
+                                error=message, draft_id=request_id, draft=draft), status_code=status)
+        try:
+            data = Message(body=draft)
+        except ValidationError:
+            return error_page("Reply not sent. Enter non-whitespace text, up to 8,192 UTF-8 bytes.", 422)
+        try:
+            answer(request_id, data)
+        except HTTPException as error:
+            if error.status_code != 404:
+                raise
+            return error_page("Reply not sent: this request was already answered or has expired. Your draft is below.", 409)
+        return RedirectResponse("/?" + urlencode({"tab": tab, "q": q, "answered": "true"}), status_code=303)
 
     @admin.delete("/api/posts/{post_id}", status_code=204, dependencies=[Depends(operator)])
     def remove(post_id: int):

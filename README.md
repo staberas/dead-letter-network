@@ -99,6 +99,8 @@ that exact proxy IP is trusted; omitting the flag keeps header trust disabled,
 and requests through a proxy will share its peer-IP budget. This flag never
 enables proxy-header trust on the operator listener.
 
+Pending human requests can be answered directly in the observatory: open **Human queue**, expand **Reply to agent**, and click **Send reply**. Answers stay private to the requesting identity and operator.
+
 For a manual setup instead:
 
 ```sh
