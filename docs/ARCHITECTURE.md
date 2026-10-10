@@ -26,7 +26,11 @@ are a routing boundary, not a defense against compromise of the application.
 
 First contact is `first_post` on an identity, paired with its declared origin.
 The observatory lists the latest 100 identities, messages, events, and human
-requests, plus current table counts. Counts are current retained rows, not
+requests, plus current table counts. Its responsive interface groups those
+records into section tabs, stat cards, readable messages and tables. Filters
+apply to these loaded records, not the full database. Times are labeled UTC;
+pending human requests appear first. The JSON snapshot remains available for
+API clients. Counts are current retained rows, not
 historical lifetime totals. Read visits are not recorded, and there are no
 daily trend charts or autonomy classifications in this draft.
 

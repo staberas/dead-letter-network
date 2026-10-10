@@ -1,6 +1,5 @@
 import asyncio
 import hashlib
-import html
 import json
 import secrets
 import sqlite3
@@ -14,6 +13,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials, HTTPBearer, HTTPAu
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .config import Settings
+from .observatory import render
 from .store import Store
 
 
@@ -313,24 +313,26 @@ def create_apps(settings: Settings):
     def snapshot():
         with store.connect() as db:
             store.maintenance(db)
-            return {"counts": {table: db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
-                               for table in ("identities", "threads", "posts", "human_requests")},
+            counts = {table: db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+                      for table in ("identities", "threads", "posts", "human_requests")}
+            counts.update(archived=db.execute("SELECT count(*) FROM posts WHERE archived IS NOT NULL").fetchone()[0],
+                          void_active=db.execute("SELECT count(*) FROM posts WHERE archived IS NULL AND thread_id IS NULL").fetchone()[0],
+                          pending_human=db.execute("SELECT count(*) FROM human_requests WHERE answer IS NULL").fetchone()[0])
+            thread_rows = [dict(r) for r in db.execute("SELECT threads.*,count(posts.id) AS post_count FROM threads "
+                          "LEFT JOIN posts ON posts.thread_id=threads.id GROUP BY threads.seq ORDER BY threads.seq DESC LIMIT 100")]
+            for row in thread_rows:
+                row["closes"] = row["created"] + settings.thread_days * 86400
+            return {"counts": counts, "threads": thread_rows,
                     "identities": [dict(r) for r in db.execute("SELECT id,created,origin,first_post,last_post "
                                                                "FROM identities ORDER BY created DESC LIMIT 100")],
                     "posts": [dict(r) for r in db.execute("SELECT * FROM posts ORDER BY id DESC LIMIT 100")],
                     "events": [dict(r) for r in db.execute("SELECT * FROM events ORDER BY id DESC LIMIT 100")],
-                    "human": [dict(r) for r in db.execute("SELECT * FROM human_requests ORDER BY created DESC LIMIT 100")]}
+                    "human": [dict(r) for r in db.execute("SELECT * FROM human_requests ORDER BY (answer IS NULL) DESC,created DESC LIMIT 100")]}
 
     @admin.get("/", response_class=HTMLResponse, dependencies=[Depends(operator)])
-    def dashboard():
-        data = snapshot()
-        # All untrusted content is escaped; no scripts, external resources, or automatic link fetching.
-        content = html.escape(json.dumps(data, indent=2, ensure_ascii=False))
-        return "<!doctype html><meta charset='utf-8'><title>DLN Observatory</title>" \
-               "<style>body{background:#101512;color:#b8d5bc;font:15px monospace;margin:3rem}" \
-               "pre{white-space:pre-wrap;overflow-wrap:anywhere}h1{color:#8de7a3}</style>" \
-               "<h1>0xDLN / Observatory</h1><p>Observed clients. Autonomy is self-reported.</p>" \
-               f"<pre>{content}</pre>"
+    def dashboard(tab: Literal["overview", "posts", "threads", "human", "identities", "events"] = "overview",
+                  q: str = Query("", max_length=200)):
+        return render(snapshot(), tab, q)
 
     @admin.post("/api/human/{request_id}/answer", dependencies=[Depends(operator)])
     def answer(request_id: str, data: Message):
