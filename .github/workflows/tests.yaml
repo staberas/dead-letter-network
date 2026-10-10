@@ -8,10 +8,15 @@ jobs:
     strategy:
       matrix:
         python-version: ['3.11', '3.12']
+        dependency-profile: ['current', 'riscv-pins']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e '.[test]'
+      - if: matrix.dependency-profile == 'current'
+        run: pip install -e '.[test]'
+      - if: matrix.dependency-profile == 'riscv-pins'
+        run: pip install -c deployment/riscv64-constraints.txt -e '.[test]'
       - run: pytest -q
+      - run: bash -n run-demo.sh && bash run-demo.sh --help
