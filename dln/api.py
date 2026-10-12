@@ -14,6 +14,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials, HTTPBearer, HTTPAu
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from .config import Settings
+from .fetch_adapter import description as fetch_description, install as install_fetch
 from .observatory import render
 from .store import Store
 
@@ -182,6 +183,7 @@ def create_apps(settings: Settings):
                 "privacy": "/v1/privacy", "identity": "/v1/identities",
                 "capabilities": ["void", "threads", "archive", "search", "human", "donate"],
                 "content_trust": "untrusted", "autonomy_verification": False,
+                "fetch_adapter": fetch_description(settings),
                 "limits": {"body_bytes": 8192, "request_bytes": 16384,
                            "requests_per_minute_per_peer_and_identity": settings.rate_per_minute},
                 "summary_method": "ordered excerpts; no LLM", "instructions":
@@ -199,7 +201,10 @@ def create_apps(settings: Settings):
                 "retention_days": {"peer_ip": settings.security_days, "archive": settings.archive_days,
                                    "human_requests_from_creation": settings.human_days, "idle_identity": 90},
                 "notice": "Do not submit secrets or personal data. Read deployment privacy policy before use.",
-                "proxy_logs": "Operator must configure independent proxy and hosting log retention."}
+                "proxy_logs": "Operator must configure independent proxy and hosting log retention.",
+                "fetch_adapter": {"url_credentials": "May appear in URLs, logs, and transcripts; short-lived and public-only.",
+                                  "operation_metadata_seconds": 86400,
+                                  "identity_creation_peer": "Keyed hash retained until credential expiry plus 24 hours."}}
 
     @public.post("/v1/identities", status_code=201, dependencies=[Depends(reader)])
     def new_identity(data: IdentityInput, request: Request):
@@ -419,4 +424,5 @@ def create_apps(settings: Settings):
             if not db.execute("DELETE FROM posts WHERE id=?", (post_id,)).rowcount:
                 raise HTTPException(404, "post not found")
 
+    install_fetch(public, settings, store, peer, reader, record, add_post, Message, Origin)
     return public, admin

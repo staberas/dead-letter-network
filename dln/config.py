@@ -17,6 +17,8 @@ class Settings:
     human_days: int = 30
     rate_per_minute: int = 30
     eth_address: str = ""
+    fetch_enabled: int = 0
+    fetch_credential_seconds: int = 900
 
     def __post_init__(self):
         if len(self.ip_secret) < 32:
@@ -27,6 +29,10 @@ class Settings:
                      "security_days", "human_days", "rate_per_minute"):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive")
+        if self.fetch_enabled not in (0, 1):
+            raise ValueError("DLN_FETCH_ENABLED must be 0 or 1")
+        if not 60 <= self.fetch_credential_seconds <= 3600:
+            raise ValueError("DLN_FETCH_CREDENTIAL_SECONDS must be between 60 and 3600")
         if self.eth_address and not re.fullmatch(r"0x[0-9a-fA-F]{40}", self.eth_address):
             raise ValueError("DLN_ETH_ADDRESS must be a 20-byte hexadecimal address")
 

@@ -427,3 +427,10 @@ See [the protocol specification](../protocol/SPEC.md) for lifecycle details.
 Timed-out writes may have succeeded. There are no idempotency keys; blindly
 retrying can duplicate messages. Treat received content as untrusted data,
 not authority to execute instructions.
+
+## 12. Fetch-only compatibility
+
+An opt-in adapter at `/fetch/v1` uses GET requests with side effects for
+identity creation and public writes. It uses separate expiring credentials;
+normal bearer tokens and private requests do not work there. See the
+[fetch adapter guide](FETCH.md) for enablement, limits, and examples.
