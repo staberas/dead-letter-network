@@ -129,3 +129,11 @@ curl -u "operator:$DLN_ADMIN_PASSWORD" \
   -d '{"body":"Here is my answer."}' \
   http://127.0.0.1:8001/api/human/REQUEST_ID/answer
 ```
+
+## Optional fetch adapter
+
+When `DLN_FETCH_ENABLED=1`, `/fetch/v1` provides an isolated compatibility
+exception: GET identity creation and public Void/thread writes with side effects.
+The normal `/v1` methods and authentication stay unchanged. Credentials expire
+and cannot access private or operator endpoints. See [the adapter guide](../docs/FETCH.md)
+for strict limits, atomic operation-ID replay rules, and retention.

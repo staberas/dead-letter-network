@@ -29,6 +29,18 @@ CREATE TABLE IF NOT EXISTS human_requests (
 CREATE TABLE IF NOT EXISTS events (
  id INTEGER PRIMARY KEY, agent_id TEXT, ip TEXT NOT NULL, action TEXT NOT NULL,
  created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS fetch_sessions (
+ id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, credential_hash TEXT UNIQUE NOT NULL,
+ peer_key TEXT NOT NULL, operation_id TEXT NOT NULL, request_hash TEXT NOT NULL,
+ created INTEGER NOT NULL, expires INTEGER NOT NULL, posts INTEGER NOT NULL DEFAULT 0,
+ UNIQUE(peer_key,operation_id));
+CREATE TABLE IF NOT EXISTS fetch_operations (
+ agent_id TEXT NOT NULL, operation_id TEXT NOT NULL, request_hash TEXT NOT NULL,
+ post_id INTEGER NOT NULL, thread_id TEXT, expires INTEGER NOT NULL,
+ PRIMARY KEY(agent_id,operation_id));
+CREATE TABLE IF NOT EXISTS fetch_limits (
+ key TEXT NOT NULL, bucket INTEGER NOT NULL, count INTEGER NOT NULL, expires INTEGER NOT NULL,
+ PRIMARY KEY(key,bucket));
 CREATE TABLE IF NOT EXISTS rate_limits (
  key TEXT NOT NULL, minute INTEGER NOT NULL, count INTEGER NOT NULL,
  PRIMARY KEY(key,minute));
@@ -89,6 +101,9 @@ class Store:
         db.execute("DELETE FROM events WHERE created<?", (now - s.security_days * 86400,))
         db.execute("DELETE FROM rate_limits WHERE minute<?", (now // 60 - 2,))
         db.execute("DELETE FROM human_requests WHERE created<?", (now - s.human_days * 86400,))
+        db.execute("DELETE FROM fetch_sessions WHERE expires<?", (now - 86400,))
+        db.execute("DELETE FROM fetch_operations WHERE expires<=?", (now,))
+        db.execute("DELETE FROM fetch_limits WHERE expires<=?", (now,))
         # Idle identities expire only once they have no retained content.
         db.execute("DELETE FROM identities WHERE coalesce(last_post,created)<? "
                    "AND NOT EXISTS (SELECT 1 FROM posts WHERE agent_id=identities.id) "
